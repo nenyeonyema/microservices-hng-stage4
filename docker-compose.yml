@@ -1,0 +1,129 @@
+version: "3.8"  
+
+services:  
+  traefik:  
+    image: "traefik:v2.9"  
+    command:  
+      - "--api.dashboard=true"  
+      - "--entrypoints.web.address=:80"  
+      - "--entrypoints.websecure.address=:443"  
+      - "--providers.docker=true"  
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"  
+      - "--certificatesresolvers.myresolver.acme.email=nenyeonyema@gmail.com"  
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"  
+    ports:  
+      - "80:80"  
+      - "443:443"
+    volumes:  
+      - "/var/run/docker.sock:/var/run/docker.sock"  
+      - "./letsencrypt:/letsencrypt"  
+    labels:  
+      - "traefik.enable=true"  
+
+  frontend:  
+    build: ./frontend
+    ports:  
+      - "8080:8080"
+    depends_on:  
+      - auth-api  
+      - todos-api  
+      - users-api  
+    env_file:  
+      - .env  # Load environment variables for frontend  
+    environment:  
+      - PORT=8080  
+      - AUTH_API_ADDRESS=http://auth-api:8081  
+      - TODOS_API_ADDRESS=http://todos-api:8082  
+    labels:  
+      - "traefik.enable=true"  
+      - "traefik.http.routers.frontend.rule=Host(`gennymicroservices.name.ng`)"  
+      - "traefik.http.routers.frontend.entrypoints=web"  
+      - "traefik.http.routers.frontend.tls.certresolver=myresolver"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080" 
+
+  auth-api:  
+    build: ./auth-api
+    ports:  
+      - "8081:8081"  
+    depends_on:  
+      - redis  
+    env_file:  
+      - .env  # Load environment variables for auth-api  
+    environment:  
+      - AUTH_API_PORT=8081  
+      - JWT_SECRET=myfancysecret  
+      - USERS_API_ADDRESS=http://users-api:8083  
+    labels:  
+      - "traefik.enable=true"  
+      - "traefik.http.routers.auth.rule=Host(`auth.gennymicroservices.name.ng`)"  
+      - "traefik.http.routers.auth.entrypoints=web"  
+      - "traefik.http.routers.auth.tls.certresolver=myresolver"
+      - "traefik.http.services.auth.loadbalancer.server.port=8081"
+
+  todos-api:  
+    build: ./todos-api
+    ports:  
+      - "8082:8082"
+    env_file:  
+      - .env  # Load environment variables for todos-api  
+    environment:  
+      - JWT_SECRET=myfancysecret  
+      - REDIS_HOST=redis  
+      - REDIS_PORT=6379  
+      - REDIS_CHANNEL=log_channel  
+    labels:  
+      - "traefik.enable=true"  
+      - "traefik.http.routers.todos.rule=Host(`todos.gennymicroservices.name.ng`)"  
+      - "traefik.http.routers.todos.entrypoints=web"  
+      - "traefik.http.routers.todos.tls.certresolver=myresolver"  
+      - "traefik.http.services.todos.loadbalancer.server.port=8082"
+
+  users-api:  
+    build: ./users-api
+    ports:  
+      - "8083:8083"
+    depends_on:  
+      - redis  
+      - auth-api   
+    env_file:  
+      - .env  # Load environment variables for users-api  
+    environment:  
+      - SERVER_PORT=8083  
+      - JWT_SECRET=myfancysecret  
+    labels:  
+      - "traefik.enable=true"  
+      - "traefik.http.routers.users.rule=Host(`users.gennymicroservices.name.ng`)"  
+      - "traefik.http.routers.users.entrypoints=web"  
+      - "traefik.http.routers.users.tls.certresolver=myresolver"  
+      - "traefik.http.services.users.loadbalancer.server.port=8083"
+
+  log-processor:  
+    build: ./log-message-processor
+    ports:  
+      - "8084:8084" 
+    depends_on:  
+      - redis  
+    env_file:  
+      - .env  # Load environment variables for log-processor  
+    environment:  
+      - REDIS_HOST=redis  
+      - REDIS_PORT=6379  
+      - REDIS_CHANNEL=log_channel  
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans  
+    labels:  
+      - "traefik.enable=true"  
+      - "traefik.http.routers.log-processor.rule=Host(`log.gennymicroservices.name.ng`)"  
+      - "traefik.http.routers.log-processor.entrypoints=web"  
+      - "traefik.http.routers.log-processor.tls.certresolver=myresolver"
+      - "traefik.http.services.log-processor.loadbalancer.server.port=8084"  
+
+  redis:  
+    image: redis:alpine  
+    container_name: redis   
+    ports:  
+      - "6379:6379"  
+    healthcheck:  
+      test: ["CMD", "redis-cli", "ping"]  
+      interval: 30s  
+      timeout: 10s  
+      retries: 3  

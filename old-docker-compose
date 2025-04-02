@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-api
+      - todos-api
+      - users-api
+
+  auth-api:
+    build: ./auth-api
+    ports:
+      - "5000:5000"
+
+  todos-api:
+    build: ./todos-api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+
+  users-api:
+    build: ./users-api
+    ports:
+      - "8080:8080"
+
+  log-processor:
+    build: ./log-processor
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
